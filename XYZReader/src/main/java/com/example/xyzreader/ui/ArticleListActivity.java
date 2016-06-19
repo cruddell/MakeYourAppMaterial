@@ -1,5 +1,6 @@
 package com.example.xyzreader.ui;
 
+import android.app.ActivityOptions;
 import android.app.LoaderManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -8,22 +9,30 @@ import android.content.IntentFilter;
 import android.content.Loader;
 import android.database.Cursor;
 import android.os.Bundle;
+import android.support.design.widget.CoordinatorLayout;
+import android.support.v4.app.ActivityOptionsCompat;
+import android.support.v4.app.SharedElementCallback;
 import android.support.v4.widget.SwipeRefreshLayout;
 import android.support.v7.app.ActionBarActivity;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.StaggeredGridLayoutManager;
 import android.support.v7.widget.Toolbar;
 import android.text.format.DateUtils;
-import android.util.TypedValue;
-import android.view.MenuItem;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.example.xyzreader.R;
 import com.example.xyzreader.data.ArticleLoader;
 import com.example.xyzreader.data.ItemsContract;
 import com.example.xyzreader.data.UpdaterService;
+import com.example.xyzreader.utils.Utils;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * An activity representing a list of Articles. This activity has different presentations for
@@ -41,7 +50,7 @@ public class ArticleListActivity extends ActionBarActivity implements
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_article_list);
+        setContentView(R.layout.activity_main_coordinator); //use updated layout
 
         mToolbar = (Toolbar) findViewById(R.id.toolbar);
 
@@ -129,19 +138,55 @@ public class ArticleListActivity extends ActionBarActivity implements
         public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
             View view = getLayoutInflater().inflate(R.layout.list_item_article, parent, false);
             final ViewHolder vh = new ViewHolder(view);
-            view.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    startActivity(new Intent(Intent.ACTION_VIEW,
-                            ItemsContract.Items.buildItemUri(getItemId(vh.getAdapterPosition()))));
-                }
-            });
             return vh;
         }
 
         @Override
-        public void onBindViewHolder(ViewHolder holder, int position) {
+        public void onBindViewHolder(final ViewHolder holder, final int position) {
             mCursor.moveToPosition(position);
+
+            /**
+             * Moved the onClickListener from the onCreateViewHolder to onBindViewHolder so we can
+             * do a shared activity transition
+             */
+            holder.rootView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    Intent intent = new Intent(Intent.ACTION_VIEW,
+                            ItemsContract.Items.buildItemUri(getItemId(position)));
+
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                        mCursor.moveToPosition(position);
+
+                        getWindow().setSharedElementsUseOverlay(false);
+
+                        //save the current image to disk for quick retrieval
+                        Utils.saveBitmapToFile(ArticleListActivity.this, "tmp.png",Utils.drawableToBitmap(holder.thumbnailView.getDrawable()));
+
+                        ImageView transitionPhoto = (ImageView)findViewById(R.id.transitionPhoto);
+                        transitionPhoto.setImageDrawable(holder.thumbnailView.getDrawable());
+                        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(holder.thumbnailView.getWidth(), holder.thumbnailView.getHeight());
+                        transitionPhoto.setLayoutParams(lp);
+
+                        int[] locations = new int[2];
+                        holder.thumbnailView.getLocationOnScreen(locations);
+                        int x = locations[0];
+                        int y = locations[1];
+
+                        transitionPhoto.setTranslationX(x);
+                        transitionPhoto.setTranslationY(y);
+
+                        // create the transition animation
+                        ActivityOptions options = ActivityOptions
+                                .makeSceneTransitionAnimation(ArticleListActivity.this, transitionPhoto, "transitionPhoto");
+                        // start the new activity
+                        startActivity(intent, options.toBundle());
+
+                    }
+                    else startActivity(intent);
+
+                }
+            });
             holder.titleView.setText(mCursor.getString(ArticleLoader.Query.TITLE));
             holder.subtitleView.setText(
                     DateUtils.getRelativeTimeSpanString(
@@ -163,12 +208,14 @@ public class ArticleListActivity extends ActionBarActivity implements
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
+        public View rootView;
         public DynamicHeightNetworkImageView thumbnailView;
         public TextView titleView;
         public TextView subtitleView;
 
         public ViewHolder(View view) {
             super(view);
+            rootView = view;
             thumbnailView = (DynamicHeightNetworkImageView) view.findViewById(R.id.thumbnail);
             titleView = (TextView) view.findViewById(R.id.article_title);
             subtitleView = (TextView) view.findViewById(R.id.article_subtitle);

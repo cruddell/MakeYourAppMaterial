@@ -1,6 +1,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:theme="@style/Theme.Bacon">
 
     <android.support.v4.view.ViewPager
         android:id="@+id/pager"
@@ -22,4 +23,12 @@
             android:contentDescription="@string/up"
             android:src="@drawable/ic_arrow_back" />
     </FrameLayout>
+
+    <ImageView
+        android:id="@+id/transitionPhoto"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/detail_photo_height"
+        android:transitionName="transitionPhoto"
+        android:scaleType="centerCrop"
+        />
 </FrameLayout>

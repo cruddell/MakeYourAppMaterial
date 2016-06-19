@@ -5,29 +5,47 @@ import android.app.FragmentManager;
 import android.app.LoaderManager;
 import android.content.Loader;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Looper;
 import android.support.v13.app.FragmentStatePagerAdapter;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.ActionBarActivity;
+import android.support.v7.app.AppCompatActivity;
+import android.transition.Transition;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowInsets;
+import android.widget.ImageView;
 
 import com.example.xyzreader.R;
 import com.example.xyzreader.data.ArticleLoader;
 import com.example.xyzreader.data.ItemsContract;
+import com.example.xyzreader.utils.Utils;
+import com.squareup.picasso.Callback;
+import com.squareup.picasso.Picasso;
+import com.squareup.picasso.RequestCreator;
+
+import java.io.IOException;
 
 /**
  * An activity representing a single Article detail screen, letting you swipe between articles.
  */
-public class ArticleDetailActivity extends ActionBarActivity
+public class ArticleDetailActivity extends AppCompatActivity
         implements LoaderManager.LoaderCallbacks<Cursor> {
+
+    private static final String TAG = "ArticleDetail";
+    private static final boolean DEBUG_LOG = true;
 
     private Cursor mCursor;
     private long mStartId;
+
+    public static final String ARG_TRANSITION_NAME = "transition_name";
 
     private long mSelectedItemId;
     private int mSelectedItemUpButtonFloor = Integer.MAX_VALUE;
@@ -38,17 +56,24 @@ public class ArticleDetailActivity extends ActionBarActivity
     private View mUpButtonContainer;
     private View mUpButton;
 
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (DEBUG_LOG) Log.d(TAG, "onCreate");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().requestFeature(Window.FEATURE_CONTENT_TRANSITIONS);
             getWindow().getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
                             View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+
         }
         setContentView(R.layout.activity_article_detail);
 
+
+
         getLoaderManager().initLoader(0, null, this);
+
 
         mPagerAdapter = new MyPagerAdapter(getFragmentManager());
         mPager = (ViewPager) findViewById(R.id.pager);
@@ -76,6 +101,35 @@ public class ArticleDetailActivity extends ActionBarActivity
             }
         });
 
+        //handle activity transition animation
+        //Note: We do some slight of hand here since the large image shown hasn't been downloaded yet
+        //We animate the thumbnail from the previous screen into place using a placeholder ImageView
+        //and then remove that ImageView as we fade in the fragment on the ViewPager.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+
+            mPager.setAlpha(0);
+            final ImageView transitionPhoto = ((ImageView)findViewById(R.id.transitionPhoto));
+            transitionPhoto.setImageBitmap(Utils.getBitmapFromFile(ArticleDetailActivity.this, "tmp.png"));
+
+            final android.os.Handler handler2 = new android.os.Handler();
+            handler2.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    mPager.animate().alpha(1);
+                }
+            }, 500);
+
+            final android.os.Handler handler = new android.os.Handler();
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    transitionPhoto.setVisibility(View.GONE);
+
+                }
+            }, 1000);
+
+        }
+
         mUpButtonContainer = findViewById(R.id.up_container);
 
         mUpButton = findViewById(R.id.action_up);
@@ -86,14 +140,16 @@ public class ArticleDetailActivity extends ActionBarActivity
             }
         });
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
             mUpButtonContainer.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
                 @Override
                 public WindowInsets onApplyWindowInsets(View view, WindowInsets windowInsets) {
-                    view.onApplyWindowInsets(windowInsets);
-                    mTopInset = windowInsets.getSystemWindowInsetTop();
-                    mUpButtonContainer.setTranslationY(mTopInset);
-                    updateUpButtonPosition();
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                        view.onApplyWindowInsets(windowInsets);
+                        mTopInset = windowInsets.getSystemWindowInsetTop();
+                        mUpButtonContainer.setTranslationY(mTopInset);
+                        updateUpButtonPosition();
+                    }
                     return windowInsets;
                 }
             });
@@ -106,6 +162,7 @@ public class ArticleDetailActivity extends ActionBarActivity
             }
         }
     }
+
 
     @Override
     public Loader<Cursor> onCreateLoader(int i, Bundle bundle) {
@@ -120,6 +177,7 @@ public class ArticleDetailActivity extends ActionBarActivity
         // Select the start ID
         if (mStartId > 0) {
             mCursor.moveToFirst();
+
             // TODO: optimize
             while (!mCursor.isAfterLast()) {
                 if (mCursor.getLong(ArticleLoader.Query._ID) == mStartId) {
@@ -175,6 +233,32 @@ public class ArticleDetailActivity extends ActionBarActivity
         @Override
         public int getCount() {
             return (mCursor != null) ? mCursor.getCount() : 0;
+        }
+    }
+
+    /**
+     * Loads the request into an imageview.
+     * If called from a background thread, the request will be performed synchronously.
+     * @param requestCreator A request creator
+     * @param imageView The target imageview
+     * @param callback a Picasso callback
+     */
+    public static void into(RequestCreator requestCreator, ImageView imageView, Callback callback) {
+        boolean mainThread = Looper.myLooper() == Looper.getMainLooper();
+        if (mainThread) {
+            requestCreator.into(imageView, callback);
+        } else {
+            try {
+                Bitmap bitmap = requestCreator.get();
+                imageView.setImageBitmap(bitmap);
+                if (callback != null) {
+                    callback.onSuccess();
+                }
+            } catch (IOException e) {
+                if (callback != null) {
+                    callback.onError();
+                }
+            }
         }
     }
 }
